@@ -100,6 +100,16 @@ Run ≥ 2 weeks and ≥ 100 trades. Go live only if:
 7. Telegram bot
 8. Dashboard
 9. Paper run (2+ weeks) → review → live with $20
+10. Strategy Lab (see §14)
+
+## 14. Strategy Lab (step 10 — after the bot runs)
+Automated research loop, inspired by agentic research pipelines: find ideas → turn into testable rules → backtest → paper → keep only winners.
+1. **Collect ideas** from GitHub repos, arXiv papers, web articles/X threads found via search, and tutorial transcripts the owner sends in (YouTube blocks cloud servers, so transcripts come via the owner: paste the YouTube "Show transcript" text, or upload the video file).
+2. **Extract** each idea into a structured rule (AI, free model): entry condition, exit condition, filters, which lane it fits.
+3. **Generate variants** (thresholds, timeframes) — capped per idea to limit overfitting.
+4. **Backtest** on our own stored history: the bot logs every candidate token, its safety/momentum/Aroon readings and later prices from day one (`data/history`).
+5. **Promote** only if: ≥100 backtest trades, positive after fees+slippage, beats current live rules, holds up on a held-out time period. Then 2 weeks of paper trading before it can touch real money.
+6. **Report**: nightly summary (ideas found, variants tested, promoted/rejected, AI cost) to Telegram and dashboard. AI budget cap: $0.50/day (free models first).
 
 ## 13. Accounts the owner needs (free)
 - GitHub: empty repo (e.g. `meme-trader`)
