@@ -5,11 +5,11 @@ AI-assisted Solana memecoin trading bot. Plan: [STRATEGY.md](STRATEGY.md). **Pap
 ## Status
 - [x] Step 1: data clients (DexScreener, RugCheck, Jupiter) + safety filter
 - [x] Step 2a: lanes B (pump.fun curve), C (trending momentum), D (hype/conviction)
-- [ ] Step 2b: lane A (smart-wallet copy) — needs HELIUS_API_KEY
-- [ ] Step 3: AI judge (Groq)
+- [x] Step 2b: lane A (smart-wallet copy, Helius polling + copy exit) — needs HELIUS_API_KEY + wallets
+- [x] Step 3: AI judge (Groq → Gemini fallback, veto-only, every decision logged to `data/decisions.jsonl`)
 - [x] Step 4: risk manager, fee budget, exits
 - [x] Step 5: paper trading engine (+ Lane C trending/momentum)
-- [ ] Step 6: Telegram bot
+- [x] Step 6: Telegram bot (alerts, daily summary, /status /positions /pnl /watch /unwatch /stop /start)
 - [ ] Step 7: dashboard
 
 ## Run
@@ -26,6 +26,8 @@ python -m pytest -q
 | `PAPER_MODE` | `false` enables live trading (not built yet) | no (default paper) |
 | `HELIUS_API_KEY` | lane A smart-wallet watching | later |
 | `TELEGRAM_BOT_TOKEN` | alerts + commands | later |
+| `TELEGRAM_CHAT_ID` | only this chat can control the bot (message the bot once; it replies with your id) | with Telegram |
+| `WALLETS` | comma-separated smart wallets for lane A (or `config/wallets.txt`) | with Helius |
 | `GROQ_API_KEY` / `GEMINI_API_KEY` | AI judge | later |
 | `AROON_FILTER` | `false` turns the Aroon trend filter off (for A/B comparison) | no (default on) |
 | `PUMPPORTAL_API_KEY` | optional: live pump.fun trade stream (key funded with ≥0.02 SOL). Without it, lane B polls DexScreener for free | no |

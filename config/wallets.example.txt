@@ -1,0 +1,3 @@
+# Copy to config/wallets.txt and list 5-7 smart wallets (one per line).
+# Pick from GMGN Smart Money / KolScan: >60% win rate, 30+ trades, 7+ days history,
+# no 10-second flip patterns (STRATEGY.md §1A). Public addresses only — never keys.
