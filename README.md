@@ -27,4 +27,5 @@ python -m pytest -q
 | `HELIUS_API_KEY` | lane A smart-wallet watching | later |
 | `TELEGRAM_BOT_TOKEN` | alerts + commands | later |
 | `GROQ_API_KEY` / `GEMINI_API_KEY` | AI judge | later |
+| `AROON_FILTER` | `false` turns the Aroon trend filter off (for A/B comparison) | no (default on) |
 | `PUMPPORTAL_API_KEY` | optional: live pump.fun trade stream (key funded with ≥0.02 SOL). Without it, lane B polls DexScreener for free | no |

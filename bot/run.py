@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 
 from .config import CONFIG, SOL_MINT
 from .data import dexscreener
-from . import momentum, safety
+from . import aroon, momentum, safety
+from .data import geckoterminal
 from .lanes import hype
 from .lanes.pumpfun import PumpLane
 from .paper import PaperBroker
@@ -82,6 +83,16 @@ def decide(c: Candidate, inp: safety.SafetyInputs) -> tuple[bool, bool, str, str
         return res.passed, False, sym, res.summary() if not res.passed else c.note
     mom, mnotes = momentum.score(inp.pair or {})
     hs, hnotes = hype.hype_score(c.hype_info, sym, c.mint)
+    # Aroon only when it could change the outcome (saves the 30/min candle limit)
+    if mom >= CONVICTION_MIN_MOMENTUM - 15 and inp.pair and inp.pair.get("pairAddress"):
+        try:
+            cs = geckoterminal.candles(inp.pair["pairAddress"])
+        except Exception:
+            cs = []
+        mom, anote, blocked = aroon.adjust(mom, cs)
+        mnotes.append(anote)
+        if blocked:
+            return False, False, sym, f"{anote}; momentum {mom}"
     conviction = hs >= CONVICTION_HYPE and mom >= CONVICTION_MIN_MOMENTUM
     res = safety.evaluate(inp, conviction=conviction)
     if not res.passed:
