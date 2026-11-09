@@ -65,3 +65,14 @@ def test_low_liquidity_soft_fail():
 
 def test_missing_report_fails():
     assert not run(rep=None, conviction=True).passed
+
+
+def test_curve_token_ok_without_dex_liquidity_or_quote():
+    rep = report(launchpad={"platform": "pump_fun"})
+    inp = SafetyInputs(mint="M", report=rep, pair=None, sell_quote=None)
+    assert evaluate(inp, on_curve=True).passed
+
+
+def test_curve_claim_without_pump_launchpad_fails():
+    inp = SafetyInputs(mint="M", report=report(), pair=None, sell_quote=None)
+    assert not evaluate(inp, on_curve=True).passed

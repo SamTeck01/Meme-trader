@@ -60,7 +60,11 @@ def creator_pct(report: dict) -> float:
     return bal / supply * 100 if supply > 0 else 0.0
 
 
-def evaluate(inp: SafetyInputs, conviction: bool = False, cfg: SafetyConfig = CONFIG.safety) -> SafetyResult:
+def evaluate(inp: SafetyInputs, conviction: bool = False, cfg: SafetyConfig = CONFIG.safety,
+             on_curve: bool = False) -> SafetyResult:
+    """on_curve: token still on the pump.fun bonding curve. The curve program always
+    lets holders sell, so the sell test is satisfied by verifying the launchpad, and the
+    DEX-liquidity check does not apply."""
     res = SafetyResult(mint=inp.mint, passed=False)
     r, p = inp.report, inp.pair
 
@@ -83,7 +87,12 @@ def evaluate(inp: SafetyInputs, conviction: bool = False, cfg: SafetyConfig = CO
     if cpct > cfg.max_cluster_pct:
         res.hard_fails.append(f"insider cluster holds {cpct:.1f}%")
     q = inp.sell_quote
-    if not q or "outAmount" not in q:
+    is_pump = ((r.get("launchpad") or {}).get("platform")) == "pump_fun"
+    if on_curve and not is_pump:
+        res.hard_fails.append("claimed curve token but launchpad is not pump.fun")
+    elif on_curve and (not q or "outAmount" not in q):
+        res.metrics["sell_test"] = "pump.fun curve"
+    elif not q or "outAmount" not in q:
         res.hard_fails.append("sell test failed (no route to sell)")
     else:
         impact = float(q.get("priceImpactPct") or 0) * 100
@@ -102,7 +111,7 @@ def evaluate(inp: SafetyInputs, conviction: bool = False, cfg: SafetyConfig = CO
         res.soft_fails.append(f"creator holds {crp:.1f}%")
     liq = float(((p or {}).get("liquidity") or {}).get("usd") or 0)
     res.metrics["liquidity_usd"] = round(liq)
-    if liq < cfg.min_liquidity_usd:
+    if liq < cfg.min_liquidity_usd and not on_curve:
         res.soft_fails.append(f"liquidity ${liq:,.0f}")
     ch24 = float(((p or {}).get("priceChange") or {}).get("h24") or 0)
     res.metrics["change_24h_pct"] = ch24
@@ -133,5 +142,5 @@ def gather(mint: str) -> SafetyInputs:
     return SafetyInputs(mint=mint, report=report, pair=pair, sell_quote=sell_q)
 
 
-def check(mint: str, conviction: bool = False) -> SafetyResult:
-    return evaluate(gather(mint), conviction=conviction)
+def check(mint: str, conviction: bool = False, on_curve: bool = False) -> SafetyResult:
+    return evaluate(gather(mint), conviction=conviction, on_curve=on_curve)
