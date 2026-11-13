@@ -29,3 +29,8 @@ def best_pair(mint: str) -> dict | None:
     if not pairs:
         return None
     return max(pairs, key=lambda p: (p.get("liquidity") or {}).get("usd") or 0)
+
+
+def pairs_for(mints: list[str], chain: str = "solana") -> list[dict]:
+    """All pairs for up to 30 tokens in one call (used by the shadow tracker)."""
+    return get_json(f"{BASE}/tokens/v1/{chain}/{','.join(mints[:30])}") or []

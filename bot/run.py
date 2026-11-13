@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 
 from .config import CONFIG, SOL_MINT
 from .data import dexscreener
-from . import aroon, momentum, safety
+from . import aroon, edge, momentum, safety
+from .shadow import Shadow
 from .data import geckoterminal
 from .lanes import hype
 from .lanes.pumpfun import PumpLane
@@ -89,8 +90,9 @@ def gather_candidates(pump: PumpLane, wl: WalletLane | None = None) -> list[Cand
     return out
 
 
-def decide(c: Candidate, inp: safety.SafetyInputs) -> tuple[bool, bool, str, str]:
-    """Returns (buy, conviction, symbol, reason). AI judge will be added here."""
+def decide(c: Candidate, inp: safety.SafetyInputs, feats: dict | None = None) -> tuple[bool, bool, str, str]:
+    """Rules only. Returns (buy, conviction, symbol, reason); fills feats for the shadow tracker."""
+    feats = feats if feats is not None else {}
     sym = ((inp.pair or {}).get("baseToken") or {}).get("symbol") or "?"
     if c.lane == "A":
         res = safety.evaluate(inp)
@@ -100,12 +102,16 @@ def decide(c: Candidate, inp: safety.SafetyInputs) -> tuple[bool, bool, str, str
         return res.passed, False, sym, res.summary() if not res.passed else c.note
     mom, mnotes = momentum.score(inp.pair or {})
     hs, hnotes = hype.hype_score(c.hype_info, sym, c.mint)
+    feats.update(momentum=mom, hype=hs)
     # Aroon only when it could change the outcome (saves the 30/min candle limit)
     if mom >= CONVICTION_MIN_MOMENTUM - 15 and inp.pair and inp.pair.get("pairAddress"):
         try:
             cs = geckoterminal.candles(inp.pair["pairAddress"])
         except Exception:
             cs = []
+        a = aroon.aroon([x[2] for x in cs], [x[3] for x in cs])
+        if a:
+            feats["aroon"] = a[2]
         mom, anote, blocked = aroon.adjust(mom, cs)
         mnotes.append(anote)
         if blocked:
@@ -131,7 +137,7 @@ def ai_review(c: Candidate, inp: safety.SafetyInputs, lane: str, reason: str):
     return (True if v is None else v.buy), v
 
 
-def look_for_entries(broker, rm, day, prices, pump, seen: dict, wl=None) -> None:
+def look_for_entries(broker, rm, day, prices, pump, seen: dict, wl=None, shadow: Shadow | None = None) -> None:
     cands = gather_candidates(pump, wl)
     checked = 0
     for c in cands:
@@ -147,20 +153,44 @@ def look_for_entries(broker, rm, day, prices, pump, seen: dict, wl=None) -> None
         checked += 1
         seen[c.mint] = time.time()
         inp = safety.gather(c.mint)
-        buy, conviction, sym, reason = decide(c, inp)
+        feats: dict = {}
+        buy, conviction, sym, reason = decide(c, inp, feats)
         lane = "D" if conviction else (c.lane if c.lane in ("A", "B") else "C")
         entry = {"mint": c.mint, "symbol": sym, "lane": lane, "rules_buy": buy, "reason": reason}
+        if inp.pair and inp.pair.get("priceUsd"):
+            price = float(inp.pair["priceUsd"])
+        else:
+            price = c.curve_price_sol * sol_usd()
+        hard = safety.evaluate(inp, conviction=True, on_curve=c.on_curve)   # hard checks only
+        feats.update(rules_buy=buy, soft_fails=hard.soft_fails, on_curve=c.on_curve,
+                     liquidity_usd=hard.metrics.get("liquidity_usd"), smart_wallets=len(c.wallets),
+                     top10_pct=hard.metrics.get("top10_pct"), change_24h=hard.metrics.get("change_24h_pct"))
+
+        def track(bought: bool = False) -> None:
+            # follow every hard-safe token forward, bought or not: this is how we learn what works
+            if shadow and not hard.hard_fails:
+                shadow.observe(c.mint, sym, lane, price, feats, bought)
+
         if not buy:
             decisions.record(entry)
+            track()
             log(f"skip {sym} [{c.lane}]: {reason[:120]}")
             continue
+        ok, why = edge.lane_allowed(lane)
+        if not ok:
+            track()
+            log(f"skip {sym}: {why}")
+            continue
         allowed, v = ai_review(c, inp, lane, reason)
+        feats["ai_buy"] = None if v is None else v.buy
+        feats["ai_confidence"] = v.confidence if v else None
         if v:
             entry["ai"] = {"decision": v.decision, "confidence": v.confidence,
                            "red_flags": v.red_flags, "reason": v.reason, "model": v.model}
         entry["ai_buy"] = allowed
         decisions.record(entry)
         if not allowed:
+            track()
             log(f"AI skip {sym} [{lane}] {v.confidence}: {v.reason[:100]}")
             continue
         if v:
@@ -169,13 +199,11 @@ def look_for_entries(broker, rm, day, prices, pump, seen: dict, wl=None) -> None
             ok, why = rm.can_open(broker.cash, eq, list(broker.positions.values()), day, conviction=True)
             if not ok:
                 log(f"skip {sym} conviction: {why}")
+                track()
                 continue
-        if inp.pair and inp.pair.get("priceUsd"):
-            price = float(inp.pair["priceUsd"])
-        else:
-            price = c.curve_price_sol * sol_usd()
         if price <= 0:
             continue
+        track(bought=True)
         size = rm.size_usd(eq, broker.cash, conviction)
         copied = next(iter(sorted(c.wallets)), None)
         broker.buy(c.mint, sym, size, price, lane=lane, conviction=conviction, copied_wallet=copied)
@@ -212,6 +240,8 @@ def handle_commands(broker, rm, day, prices) -> None:
             key = arg if len(arg) > 30 else arg.lstrip("$").lower()
             (hype.WATCHLIST.add if cmd == "watch" else hype.WATCHLIST.discard)(key)
             TG.send(f"{cmd}ed {arg}. Watchlist: {', '.join(sorted(hype.WATCHLIST)) or 'empty'}")
+        elif cmd == "report":
+            TG.send(edge.report())
         else:
             TG.send(HELP)
 
@@ -227,6 +257,7 @@ def main() -> None:
     pump = PumpLane()
     pump.start()
     wl = WalletLane()
+    shadow = Shadow(rm=RiskManager())
     TG.start()
     log(f"lane A: {'on' if wl.enabled else 'off (needs HELIUS_API_KEY + wallets)'} · "
         f"AI judge: {'on' if ai_judge.enabled() else 'off (no-AI baseline)'} · telegram: {'on' if TG.enabled else 'off'}")
@@ -244,10 +275,12 @@ def main() -> None:
         prices = manage_exits(broker, rm, day, wl)
         handle_commands(broker, rm, day, prices)
         pump.poll(sol_usd())
-        look_for_entries(broker, rm, day, prices, pump, seen, wl)
+        done = shadow.poll()
+        look_for_entries(broker, rm, day, prices, pump, seen, wl, shadow)
+        shadow.save()
         eq = broker.equity(prices)
         log(f"equity ${eq:.2f} cash ${broker.cash:.2f} open {len(broker.positions)} "
-            f"fees ${broker.fees_total:.2f} | pump: {pump.stats}")
+            f"fees ${broker.fees_total:.2f} | tracking {len(shadow.obs)} (+{done} finished) | pump: {pump.stats}")
         n += 1
         if a.cycles and n >= a.cycles:
             break

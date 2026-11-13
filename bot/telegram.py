@@ -10,8 +10,8 @@ import threading
 import httpx
 
 API = "https://api.telegram.org/bot{t}/{m}"
-COMMANDS = {"status", "stop", "start", "watch", "unwatch", "positions", "pnl", "help"}
-HELP = ("/status /positions /pnl\n/watch <ticker|CA>  /unwatch <ticker|CA>\n"
+COMMANDS = {"status", "stop", "start", "watch", "unwatch", "positions", "pnl", "report", "help"}
+HELP = ("/status /positions /pnl\n/report — which signals are actually making money\n/watch <ticker|CA>  /unwatch <ticker|CA>\n"
         "/stop — sell all and halt   /start — resume")
 
 

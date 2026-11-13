@@ -1,4 +1,4 @@
-"""Lane A: smart-wallet copy (STRATEGY.md §1A).
+"""Lane A: smart-wallet copy (STRATEGY.md §1A, §4).
 
 Polls Helius' parsed-transactions API (free tier) for each tracked wallet instead of
 webhooks, so the bot needs no public URL. A wallet gaining a token while paying SOL/stables

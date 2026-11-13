@@ -1,4 +1,4 @@
-"""Risk manager (STRATEGY.md §4–5). The AI never overrides anything in here."""
+"""Risk manager (STRATEGY.md §5–5b). The AI never overrides anything in here."""
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 

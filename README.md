@@ -10,13 +10,15 @@ AI-assisted Solana memecoin trading bot. Plan: [STRATEGY.md](STRATEGY.md). **Pap
 - [x] Step 4: risk manager, fee budget, exits
 - [x] Step 5: paper trading engine (+ Lane C trending/momentum)
 - [x] Step 6: Telegram bot (alerts, daily summary, /status /positions /pnl /watch /unwatch /stop /start)
-- [ ] Step 7: dashboard
+- [x] Step 6b: shadow tracker + edge report + evidence gate (STRATEGY.md v2 §3–4)
+- [ ] Step 7: deploy 24/7, Supabase storage, dashboard
 
 ## Run
 ```bash
 pip install -r requirements.txt
 python -m bot.scan --limit 15   # check live trending tokens against the safety filter
 python -m bot.run              # paper trading loop (Ctrl+C to stop)
+python -m bot.edge             # edge report: which lanes/filters make money after costs
 python -m pytest -q
 ```
 
@@ -29,5 +31,6 @@ python -m pytest -q
 | `TELEGRAM_CHAT_ID` | only this chat can control the bot (message the bot once; it replies with your id) | with Telegram |
 | `WALLETS` | comma-separated smart wallets for lane A (or `config/wallets.txt`) | with Helius |
 | `GROQ_API_KEY` / `GEMINI_API_KEY` | AI judge | later |
+| `ROUND_TRIP_COST_PCT` | cost assumed per trade in the edge report and gate (default 10) | no |
 | `AROON_FILTER` | `false` turns the Aroon trend filter off (for A/B comparison) | no (default on) |
 | `PUMPPORTAL_API_KEY` | optional: live pump.fun trade stream (key funded with ≥0.02 SOL). Without it, lane B polls DexScreener for free | no |

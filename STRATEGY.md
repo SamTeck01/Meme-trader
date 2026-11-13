@@ -1,13 +1,31 @@
-# Meme Trader — AI Memecoin Trading Bot (Plan v1)
+# Meme Trader — AI Memecoin Trading Bot (Plan v2: evidence first)
 
 Owner: Oyewole Abdul-Samad (Nigeria) · Chain: Solana · Starting capital: $20
-Status: planning complete → ready to build. Real money only after paper test passes.
+Status: paper trading. Real money only after the go-live test (§10) passes.
+
+## What changed in v2 and why
+v1 assumed its signals (trending, hype, pump.fun, copy wallets) make money and planned to find
+out from ~100 paper trades over two weeks. That is too slow and too little data, and nothing
+showed any signal had an edge. Checking the top public "smart wallets" proved the point: the
+best one by win rate was a token creator dumping on its own buyers within seconds.
+
+v2 keeps the safety filter, risk limits and paper engine, and changes how trades are chosen:
+1. **Measure everything.** Every token that passes the hard safety checks is followed for 6 hours,
+   bought or not, and scored with our real exit rules (shadow tracker, §3). Hundreds of data points a day.
+2. **Only proven signals trade.** A lane with 40+ tracked signals and a negative average after
+   costs is switched off automatically. It keeps being tracked and switches back on if it recovers (§4).
+3. **Filters must earn their place.** The edge report shows, for each filter (AI judge, Aroon,
+   momentum, soft safety checks), whether tokens that pass do better than tokens that fail.
+4. **Costs are part of the test.** Results are reported after a round-trip cost (default 10% of the
+   position, `ROUND_TRIP_COST_PCT`). On a ~$3 position costs are the biggest enemy; the first tiny
+   live trades calibrate this number.
 
 ## 0. Ground rules (agreed)
 - It can lose money. It is not a money printer. Goal: find out if we have an edge, cheaply.
-- Fully automatic trading (no per-trade approval). Fast: continuous scanning, many trades.
+- Fully automatic trading (no per-trade approval).
 - Budget: $0 for data/AI. No X API. Running cost target $0–5/month + trading fees.
 - Paper trading first, on live data, before any real money.
+- No rule in this file is bypassed because a signal "looks good". Evidence changes rules; hype does not.
 
 ## 1. Signal sources (all free)
 | Lane | Source | What triggers a look |
@@ -28,14 +46,25 @@ Standard (conviction lane may skip):
 - Enough liquidity to exit a position
 - Not already up >10x today
 
-## 3. AI judge
-- Model: Groq free tier (fast, ~1–2 s). Fallback: Gemini free tier. Optional paid upgrade (Claude/Grok) only if A/B test shows better calls.
-- Input: signal, token numbers, name/description, social links + account age/followers, smart wallets holding, creator history.
-- Output (strict JSON): `{decision: BUY|SKIP, confidence: 0-100, red_flags: [], reason: ""}`
-- Buys only at confidence ≥ 70. Model is swappable.
-- Nightly review: AI reads the day's trades and *suggests* rule changes; owner approves.
+## 3. Shadow tracker (the evidence engine)
+- Every hard-safe token is recorded with its features (lane, momentum, hype, Aroon, liquidity,
+  holder concentration, soft-check failures, AI verdict) and followed for 6 hours.
+- Stored per token: price at 5 min / 15 min / 1 h / 6 h, high, low, rug flag (liquidity pulled or
+  price gone), and the return our exit rules (§5) would have produced.
+- `python -m bot.edge` or Telegram `/report` prints the edge report: results by lane and a
+  yes/no comparison for every filter.
 
-## 4. Position sizing & exits
+## 4. Evidence gate and AI judge
+- Gate: lane needs ≥ 40 rule-approved signals in the last 7 days before it can be judged;
+  negative average after costs → lane off (still tracked). Lives in code; the AI cannot override it.
+- AI judge: Groq free tier, Gemini fallback. Runs only after safety + rules + gate say yes.
+  Strict JSON `{decision, confidence, red_flags, reason}`; buys only at confidence ≥ 70; veto-only.
+- The AI is itself on trial: the report compares "AI said BUY" against "AI said SKIP". If it does
+  not help, it is removed.
+- Lane A (copy wallets) candidates must show ≥ 5 round trips with median hold ≥ 10 minutes and must
+  not be the creator of the tokens they trade. Public leaderboards are a starting list, not proof.
+
+## 5. Position sizing & exits
 | Rule | Normal | Conviction (hype) |
 |---|---|---|
 | Size | 15% of balance (~$3) | up to 30% |
@@ -46,7 +75,7 @@ Standard (conviction lane may skip):
 Take-profit: sell 50% at 2x, 25% at 4x, last 25% on −35% trailing stop.
 Copy exit: if the copied wallet sells, we sell. Time stop: flat after 6 h → close.
 
-## 5. Account-level protection
+## 5b. Account-level protection
 - Daily stop: −25% day → pause until next day.
 - Conviction lane: 2 losses in a row → lane paused for the day.
 - Hard floor: balance < $8 → stop everything, Telegram alert.
@@ -67,14 +96,15 @@ Copy exit: if the copied wallet sells, we sell. Time stop: flat after 6 h → cl
 - Keep trade logs (Nigeria Tax Act 2025 treats crypto gains as income).
 
 ## 8. Telegram bot
-Alerts on every buy/sell + daily summary. Commands: `/status`, `/stop`, `/start`, `/watch <ticker|CA|account>`, `/unwatch`, `/positions`, `/pnl`.
+Alerts on every buy/sell + daily summary. Commands: `/report`, `/status`, `/stop`, `/start`, `/watch <ticker|CA|account>`, `/unwatch`, `/positions`, `/pnl`.
 
 ## 9. Dashboard (phone-friendly web app)
 Home (balance, today P&L, trades counter, balance chart) · Positions · AI feed (every token reviewed + reason) · Wallets (followed wallets + performance) · Settings (paper/live, risk limits, kill switch, deposit QR, withdraw).
 
 ## 10. Go-live test (paper → real)
-Run ≥ 2 weeks and ≥ 100 trades. Go live only if:
-- Profitable after fees and slippage
+Run ≥ 2 weeks, ≥ 100 paper trades and ≥ 500 shadow observations. Go live only if:
+- At least one lane shows a positive average after costs in the edge report over ≥ 100 signals
+- Paper account profitable after fees and slippage
 - No day worse than −25%
 - Rugs < 10% of trades
 - Beats a "no-AI" baseline (buy everything that passes the safety filter)
@@ -91,15 +121,10 @@ Run ≥ 2 weeks and ≥ 100 trades. Go live only if:
 | Trading fees | priority fees | ~$0.10–0.50/trade |
 
 ## 12. Build order
-1. Repo setup, config, Supabase schema
-2. Token data + safety filter (log what passes; check a week later how many rugged)
-3. Signal lanes A–D
-4. AI judge
-5. Risk manager + fee budget + exits
-6. Paper trading engine
-7. Telegram bot
-8. Dashboard
-9. Paper run (2+ weeks) → review → live with $20
+Done: data clients, safety filter, lanes A–D, risk manager, paper engine, AI judge, Telegram,
+shadow tracker, edge report, evidence gate.
+Next: 1) deploy worker 24/7 · 2) Supabase storage (replaces local files) · 3) dashboard ·
+4) first weekly edge review → cut or tune lanes · 5) go-live test → live with $20.
 
 ## 13. Accounts the owner needs (free)
 - GitHub: empty repo (e.g. `meme-trader`)

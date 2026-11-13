@@ -1,4 +1,4 @@
-"""AI judge (STRATEGY.md §3). Groq first, Gemini fallback, both free tiers.
+"""AI judge (STRATEGY.md §4). Groq first, Gemini fallback, both free tiers.
 
 The judge only gets a vote AFTER the safety filter and lane rules said yes. It can veto,
 never force a buy, and never touches sizing/stops (those live in risk.py).
