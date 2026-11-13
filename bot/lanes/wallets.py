@@ -1,8 +1,8 @@
 """Lane A: smart-wallet copy (STRATEGY.md §1A).
 
 Polls Helius' parsed-transactions API (free tier) for each tracked wallet instead of
-webhooks, so the bot needs no public URL. A wallet receiving a non-SOL/stable token in
-a SWAP = buy signal; sending it away = sell signal (used for the copy exit).
+webhooks, so the bot needs no public URL. A wallet gaining a token while paying SOL/stables
+= buy signal; the reverse = sell signal (used for the copy exit).
 
 Wallets: WALLETS env (comma-separated) or config/wallets.txt (one address per line, # comments).
 """
@@ -19,6 +19,7 @@ IGNORE = {SOL_MINT,
           "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",   # USDC
           "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCQ6tymYJCX"}   # USDT
 MAX_SIGNAL_AGE_S = 10 * 60
+MIN_BASE = 0.005   # ignore dust: fees alone are not a purchase
 WALLETS_FILE = Path("config/wallets.txt")
 
 
@@ -39,15 +40,38 @@ def load_wallets() -> list[str]:
     return [w for w in ws if w]
 
 
-def parse_tx(tx: dict, wallet: str) -> list[WalletEvent]:
-    out = []
+def _flows(tx: dict, wallet: str) -> tuple[dict[str, float], float]:
+    """(net token change per non-base mint, net base-currency flow) for the wallet.
+    Base flow is in mixed units (SOL + stables); only its sign is used."""
+    tokens: dict[str, float] = {}
+    base = 0.0
     for t in tx.get("tokenTransfers") or []:
-        mint = t.get("mint")
-        if not mint or mint in IGNORE or not t.get("tokenAmount"):
+        mint, amt = t.get("mint"), float(t.get("tokenAmount") or 0)
+        d = amt if t.get("toUserAccount") == wallet else -amt if t.get("fromUserAccount") == wallet else 0.0
+        if not mint or not d:
             continue
-        if t.get("toUserAccount") == wallet:
+        if mint in IGNORE:
+            base += d
+        else:
+            tokens[mint] = tokens.get(mint, 0.0) + d
+    for a in tx.get("accountData") or []:
+        if a.get("account") == wallet:
+            base += float(a.get("nativeBalanceChange") or 0) / 1e9
+    return tokens, base
+
+
+def parse_tx(tx: dict, wallet: str) -> list[WalletEvent]:
+    """A real trade moves a token one way and SOL/stables the other. Helius labels many
+    swaps TRANSFER/UNKNOWN, so we classify by money flow, not by its type field. This also
+    ignores airdrops/spam (token in, nothing paid) and multi-hop route tokens (net zero)."""
+    if tx.get("transactionError"):
+        return []
+    tokens, base = _flows(tx, wallet)
+    out = []
+    for mint, d in tokens.items():
+        if d > 1e-9 and base < -MIN_BASE:
             side = "BUY"
-        elif t.get("fromUserAccount") == wallet:
+        elif d < -1e-9 and base > MIN_BASE:
             side = "SELL"
         else:
             continue
@@ -88,7 +112,7 @@ class WalletLane:
             return
         for w in self.wallets:
             try:
-                txs = get_json(HELIUS.format(a=w), params={"api-key": self.key, "type": "SWAP", "limit": 20}) or []
+                txs = get_json(HELIUS.format(a=w), params={"api-key": self.key, "limit": 50}) or []
             except Exception:
                 self.stats["errors"] += 1
                 continue
